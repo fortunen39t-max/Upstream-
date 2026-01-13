@@ -787,3 +787,75 @@ func _() error {
 
 	return nil
 }
+
+// Types for testing receiver type analysis
+type ConcreteValue struct{ val int }
+
+func (c ConcreteValue) ValueMethod() int    { return c.val }
+func (c *ConcreteValue) PointerMethod() int { return c.val }
+
+type ConcretePointer struct{ val int }
+
+func (c *ConcretePointer) Method() int { return c.val }
+
+// Test: Value receiver on concrete type should NOT cause escaping
+// The assignment should be flagged as ineffectual
+func _() {
+	c := ConcreteValue{val: 1}
+	_ = c.ValueMethod()
+	c = ConcreteValue{val: 2} // want "ineffectual assignment to c"
+}
+
+// Test: Pointer receiver on concrete type SHOULD cause escaping
+// The assignment should NOT be flagged (variable escapes)
+func _() {
+	c := ConcreteValue{val: 1}
+	_ = c.PointerMethod()
+	c = ConcreteValue{val: 2}
+}
+
+// Test: Pointer receiver type SHOULD cause escaping
+func _() {
+	c := &ConcretePointer{val: 1}
+	_ = c.Method()
+	c = &ConcretePointer{val: 2}
+}
+
+// Test: Interface types SHOULD cause escaping because concrete type is unknown
+// The assignment should NOT be flagged (interface may hold pointer type)
+type Stringer interface {
+	String() string
+}
+
+type MyString string
+
+func (m MyString) String() string { return string(m) }
+
+func _() {
+	var s Stringer = MyString("hello")
+	_ = s.String()
+	s = MyString("world")
+}
+
+// Test: fmt.Stringer interface should cause escaping
+func _() {
+	var s fmt.Stringer = MyString("hello")
+	_ = s.String()
+	s = MyString("world")
+}
+
+// Test: Multiple value receiver calls should still detect ineffectual
+func _() {
+	c := ConcreteValue{val: 1}
+	_ = c.ValueMethod()
+	_ = c.ValueMethod()
+	c = ConcreteValue{val: 2} // want "ineffectual assignment to c"
+}
+
+// Test: Mix of value and pointer receivers - pointer wins (causes escape)
+func _() {
+	c := ConcreteValue{val: 1}
+	_ = c.ValueMethod()
+	_ = c.PointerMethod()
+	c = ConcreteValue{val: 2}
+}
