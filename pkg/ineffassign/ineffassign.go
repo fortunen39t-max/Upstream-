@@ -556,8 +556,8 @@ func ident(x ast.Expr) (*ast.Ident, bool) {
 }
 
 // causesEscaping determines if a selector expression truly causes a variable to escape.
-// It returns true for field access, pointer receiver methods, and method expressions,
-// but false for value receiver methods like Error().
+// It returns true for field access, pointer receiver methods, interface receivers, and method expressions,
+// but false for value receiver methods on concrete types like Error() on a concrete error type.
 func (bld *builder) causesEscaping(selExpr *ast.SelectorExpr) bool {
 	// If we don't have type information, be conservative
 	if bld.pass == nil || bld.pass.TypesInfo == nil {
@@ -580,15 +580,17 @@ func (bld *builder) causesEscaping(selExpr *ast.SelectorExpr) bool {
 		// Method expressions like T.method always cause escaping
 		return true
 	case types.MethodVal:
-		// Method values: check if the method has a pointer receiver
+		// Method values: check if the method has a pointer or interface receiver
 		obj := sel.Obj()
 		if fn, ok := obj.(*types.Func); ok {
 			sig := fn.Type().(*types.Signature)
 			recv := sig.Recv()
 			if recv != nil {
-				// Check if receiver is a pointer type
 				_, isPointer := recv.Type().(*types.Pointer)
-				return isPointer
+				// Interface receivers must be treated as escaping because the concrete
+				// type may be a pointer, which is only known at runtime
+				_, isInterface := recv.Type().Underlying().(*types.Interface)
+				return isPointer || isInterface
 			}
 		}
 		// If we can't determine the receiver type, be conservative

@@ -770,15 +770,16 @@ func (t T) _() {
 func someFunction() error    { return nil }
 func anotherFunction(string) { return }
 
-// Test case reproducing the false negative with status.Errorf - now fixed!
+// Test: error interface causes escaping (concrete type unknown at compile time)
+// This should NOT be flagged because error is an interface
 func _() error {
 	err := someFunction()
 	if err != nil {
 		anotherFunction(err.Error())
 	}
 
-	// This assignment is now correctly flagged because err.Error() uses a value receiver
-	err = someFunction() // want "ineffectual assignment to err"
+	// Not flagged: error is an interface, concrete type may be pointer at runtime
+	err = someFunction()
 
 	err = someFunction()
 	if err != nil {
@@ -786,6 +787,20 @@ func _() error {
 	}
 
 	return nil
+}
+
+// Concrete error type for testing value receiver optimization
+type concreteError struct{ msg string }
+
+func (e concreteError) Error() string { return e.msg }
+
+func makeConcreteError() concreteError { return concreteError{"error"} }
+
+// Test: concrete error type with value receiver SHOULD be flagged
+func _() {
+	err := makeConcreteError()
+	_ = err.Error()
+	err = makeConcreteError() // want "ineffectual assignment to err"
 }
 
 // Types for testing receiver type analysis
